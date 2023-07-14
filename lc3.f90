@@ -40,8 +40,6 @@ character(1) :: c
 character(256) :: file
 integer :: ierr
 
-
-
 ! ----------- STATEMENTS START HERE ---------------------------
 
 nargs = command_argument_count()
@@ -64,57 +62,51 @@ exec: do
    code = mem(V(PC))    ! Read opcode
    V(PC) = V(PC) + 1  ! Increment program counter
 
-   op = shiftl(code,12)
+
+   ! Bits [15:12] contain the opcode
+   op = ibits(code,12,4)
 
    select case (op)
    case(0) ! br: Conditional branch
 
-      b = iand(shiftl(code,9),b'111')
-      if (iand(b,V(CND))) then
-         offset = 
-         V(PC) = V(PC) + offset
+      b = ibits(code,9,3)
+
+      if (iand(b,V(CND)) > 0) then
+         offset = ibits(code,0,9)
+         V(PC) = V(PC) + sext(offset,9)
       end if
 
    case(1) ! add: Addition
 
+      d  = ibits(code,9,3)
+      s1 = ibits(code,6,3)
+
       ! Two modes
-      if (btest(opcode,5)) then
-
-         d  =
-         s1 = 
-         a = 
-
-
-         ! TODO: check wraparound?
-         V(d) = V(s1) + V(s2)
-
+      if (btest(code,5)) then
+         imm  = ibits(code,0,5)
+         V(d) = V(s1) + sext(imm,5)
       else
-         d  =
-         s1 = 
-         s2 = 
-         ! TODO: check wraparound?
+         s2 = ibits(code,0,3) 
          V(d) = V(s1) + V(s2)
       end if
 
-
       V(CND) = flag(V(d))
-
 
    case(2) ! ld: Load PC + offset
 
-      d = 
-      offset = 
+      d = ibits(code,9,3)
+      offset = ibits(code,0,9)
 
-      V(d) = mem(V(PC) + offset)
+      V(d) = mem(V(PC) + sext(offset,9))
       ! Set status flag
       V(CND) = flag(V(d))
 
    case(3) ! st: Store
 
-      s = 
-      offset =
+      s = ibits(code,9,3)
+      offset = ibits(code,0,9)
 
-      mem(V(PC) + offset) = V(s)
+      mem(V(PC) + sext(offset,9)) = V(s)
 
 
    case(4) ! jsr: Jump to Subroutine
@@ -122,30 +114,29 @@ exec: do
       V(7) = V(PC)
 
       if (btest(opcode,11)) then
-         offset =
-         V(PC) = V(PC) + offset 
+         offset = ibits(code,0,11)
+         V(PC) = V(PC) + sext(offset,11) 
       else
-         b = 
+         b = ibits(code,6,3)
          V(PC) = V(b)
       end if
 
-
    case(5) ! and: Bitwise logical and
 
-      if (btest(opcode,5)) then
+      if (btest(code,5)) then
          ! And 2
 
-         d =
-         s1 =
-         a =
+         d  = ibits(code,9,3)
+         s1 = ibits(code,6,3)
+         a  = ibits(code,0,5)
 
-         V(d) = iand(V(s1),a) 
+         V(d) = iand(V(s1),sext(a,5)) 
 
       else
          ! And 1
-         d = 
-         s1 = 
-         s2 =
+         d  = ibits(code,9,3)
+         s1 = ibits(code,6,3)
+         s2 = ibits(code,0,3)
 
          V(d) = iand(V(s1),V(s2))
       end if
@@ -155,20 +146,20 @@ exec: do
 
    case(6) ! ldr: Load Base + Offset
 
-      d =
-      b =
-      offset = 
+      d = ibits(code,9,3)
+      b = ibits(code,6,3)
+      offset = ibits(code,0,6)
 
-      V(d) = mem(V(b) + offset)
+      V(d) = mem(V(b) + sext(offset,6))
       V(CND) = flag(V(d))
 
    case(7) ! str: Store base + Offset
 
-      d =
-      b =
-      offset = 
+      s = ibits(code,9,3)
+      b = ibits(code,6,3)
+      offset = ibits(code,0,6)
 
-      mem(V(b) + offset) = V(d)
+      mem(V(b) + sext(offset,6)) = V(s)
 
 
    case(8) ! rti: Return from interrupt
@@ -176,51 +167,52 @@ exec: do
       ! Has to do with supervisor modes of the processor
       ! Since we only emulate user mode, here we
       ! should launch a privilege mode exception
-
+      call exception()
 
    case(9) ! not: Bitwise complement
 
-      d = 
-      s = 
+      d = ibits(code,9,3)
+      s = ibits(code,6,3)
 
       V(d) = not(V(s))
       V(CND) = flag(V(d))
 
    case(10) ! ldi: Load indirect
 
-      d =
-      offset = 
+      d = ibits(code,9,3)
+      offset = ibits(code,0,9)
 
-      V(d) = mem(mem(V(PC) + offset))
+      V(d) = mem(mem(V(PC) + sext(offset,9)))
       V(CND) = flag(V(d))
 
    case(11) ! sti: Store indirect
 
-      s =
-      offset = 
+      s = ibits(code,9,3)
+      offset = ibits(code,0,9)
 
-      mem(mem(V(PC) + offset)) = V(s)
+      mem(mem(V(PC) + sext(offset,9))) = V(s)
 
 
    case(12) ! jmp: Jump/Return to subroutine
 
-      b = 
+      b = ibits(6,3) 
       V(PC) = V(b)
       
       ! when b = (111)_2 = (7)_10, this
-      ! becomes a return statement
+      ! becomes a return statement, because when a subroutine
+      ! is called with JSR, the PC is stored in V(7)
 
-
-   !case(13) ! res: Reserved for future use
+   case(13) ! res: Reserved for future use
       ! 
       ! Initiate an illegal opcode exception
+      call illegal()
 
    case(14) ! lea: Load effective address
 
-      d =
-      offset =
+      d = ibits(code,9,3)
+      offset = ibits(code,0,9)
 
-      V(d) = V(PC) + offset
+      V(d) = V(PC) + sext(offset,9)
       V(CND) = flag(V(d))
 
    case(15) ! trap: System trap/call
@@ -232,8 +224,11 @@ exec: do
       ! The locations z'0000' through z'00FF', 256 in all, are available
       ! for the starting addresses of systems calls, for the corresponding
       ! trap vectors.
+      !
+      ! Trap vectors z'20' to z'25' are implemented using service routines
 
-      tf = 
+      tf = ibits(code,0,8) ! zero extension automatic
+      tf = tf - int(z'20')
 
       select case(tf)
       case(0) ! z'20' - GETC
@@ -269,16 +264,34 @@ end do exec
 
 contains
 
+   function get_pc() 
+      integer(word), pointer :: get_pc
+      get_pc => V(8)
+   end function
+
+   ! Sign-extend the lowest n bits of x
+   pure function sext(x,n)
+   integer(int16), value :: x, n
+   integer(int16) :: sext
+   sext = shiftl(ibits(x,0,n),bit_size(x)-n)
+   sext = shifta(sext,bit_size(x)-n)
+   end function
+
+   ! TODO: Specialize the routine for the specific offsets which
+   !       are needed.
+
+
+   ! Returns the condition code for the register value r
+   !
+   ! Used with the load instructions (LD, LDI, LDR) and the operate
+   ! instructions (ADD, AND, and NOT). Based on wheter the result
+   ! is negative, zero, or positive, sets the condition register V(9).
    pure integer(word) function flag(r)
       integer(word), value :: r
 
-      ! 001 ... positive
-      ! 010 ... zero
-      ! 100 ... negative
-
-      integer, parameter :: FP = 1
-      integer, parameter :: FZ = 2
-      integer, parameter :: FN = 4
+      integer, parameter :: FP = 1  ! 001 ... positive
+      integer, parameter :: FZ = 2  ! 010 ... zero
+      integer, parameter :: FN = 4  ! 100 ... negative
 
       if (r == 0) then
          flag = FZ
@@ -326,6 +339,48 @@ contains
       read(hf,iostat=stat) mem(lb:ub)
 
       close(hf)
+
+   end subroutine
+
+
+   subroutine trap_service(trap)
+   integer, intent(in) :: trap
+
+   integer, parameter :: GETC  = int(z'20')
+   integer, parameter :: OUT   = int(z'21')
+   integer, parameter :: PUTS  = int(z'22')
+   integer, parameter :: IN    = int(z'23')
+   integer, parameter :: PUTSP = int(z'24')
+   integer, parameter :: HALT  = int(z'25')
+
+   select case(trap)
+   case(GETC)
+      ! Read a single character from the keyboard. The character is not echoed onto
+      ! the console. Its ASCII code is copied into R0. The high eight bits of R0 are cleared.
+   case(OUT)
+      ! Write a character in R0[7:0] to the console display.
+   case(PUTS)
+      ! Write a string of ASCII characters to the console display. The characters are
+      ! contained in consecutive memory locations, one character per memory location,
+      ! starting with the address specified in R0. Writing terminates with the occurrence of
+      ! z'0000' in a memory location.
+   case(IN)
+      ! Print a prompt on the screen and read a single character from the keyboard. The
+      ! character is exhoed onto the console monitor, and its ASCII code is copied into
+      ! R0. The high eight bits of R0 are cleared.
+   case(PUTSP)
+      ! Write a string of ASCII characters to the console. The characters are contained in
+      ! consecutive memory locations, two characters per memory location, starting with
+      ! the address specified in R0. The ASCII code contained in bits [7:0] of a memory
+      ! location is written to the console first. Then the ASCII code contained in bits [15:8]
+      ! of that memory location is written to the console. (A character string consisting of
+      ! an odd number of characters to be written will have z'00' in bits[15:8] of the
+      ! memory location containing the last character to be written.) Writing terminates
+      ! with the occurence of z'0000' in a memory location.
+   case(HALT)
+      ! Halt execution and print a message on the console
+      stop "Halting execution."
+   end select
 
    end subroutine
 
